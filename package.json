@@ -1,62 +1,16 @@
 {
-	"name": "@comapeo/metrics",
-	"version": "1.0.0-pre.0",
-	"author": "",
-	"description": "Metrics handling in CoMapeo applications",
-	"homepage": "https://github.com/digidem/comapeo-metrics#readme",
-	"bugs": {
-		"url": "https://github.com/digidem/comapeo-metrics/issues"
-	},
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/digidem/comapeo-metrics.git"
-	},
-	"license": "MIT",
-	"type": "module",
-	"exports": {
-		".": {
-			"types": "./dist/index.d.ts",
-			"default": "./dist/index.js"
-		}
-	},
-	"files": [
-		"dist/",
-		"src/"
-	],
-	"devEngines": {
-		"runtime": {
-			"name": "node",
-			"version": "^24.13.0",
-			"onFail": "warn"
-		}
-	},
-	"scripts": {
-		"build": "tsc -p tsconfig.build.json",
-		"checks:eslint": "eslint --cache",
-		"checks:format": "prettier --cache --check .",
-		"checks:publint": "npm run build && publint",
-		"checks": "run-p --aggregate-output checks:*",
-		"prepack": "npm run build",
-		"prepare": "husky",
-		"test": "vitest run",
-		"types": "tsc"
-	},
-	"devDependencies": {
-		"@eslint/compat": "2.0.2",
-		"@eslint/js": "9.39.2",
-		"@ianvs/prettier-plugin-sort-imports": "4.7.0",
-		"@tsconfig/node18": "18.2.6",
-		"@types/node": "20.19.30",
-		"@vitest/eslint-plugin": "1.6.6",
-		"eslint": "9.39.2",
-		"globals": "17.3.0",
-		"husky": "9.1.7",
-		"nano-staged": "0.9.0",
-		"npm-run-all2": "7.0.2",
-		"prettier": "3.8.1",
-		"publint": "0.3.17",
-		"typescript": "5.9.3",
-		"typescript-eslint": "8.54.0",
-		"vitest": "4.0.18"
-	}
+  "name": "comapeo-metrics",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.28.2",
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
 }

@@ -1,0 +1,17 @@
+packages:
+  - worker
+  - client
+  - e2e
+
+catalog:
+  typescript: ^5.9.3
+  vitest: ^3.2.4
+  wrangler: ^4.61.1
+
+ignoredBuiltDependencies:
+  - esbuild
+  - sharp
+  - workerd
+
+onlyBuiltDependencies:
+  - supabase

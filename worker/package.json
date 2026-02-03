@@ -1,0 +1,25 @@
+{
+  "name": "comapeo-metrics",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "generate-types": "wrangler types",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "itty-router": "^5.0.22",
+    "postgres": "^3.4.8",
+    "valibot": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.0",
+    "type-fest": "^5.4.3",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "wrangler": "catalog:"
+  }
+}
