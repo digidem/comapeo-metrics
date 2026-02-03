@@ -5,17 +5,21 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler deploy --outdir dist --var SENTRY_RELEASE:$(sentry-cli releases propose-version)",
     "generate-types": "wrangler types",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "sentry:sourcemaps": "_SENTRY_RELEASE=$(sentry-cli releases propose-version) && sentry-cli releases new $_SENTRY_RELEASE --org=awana-digital --project=comapeo-metrics-worker && sentry-cli sourcemaps upload --org=awana-digital --project=comapeo-events-worker --release=$_SENTRY_RELEASE --strip-prefix 'dist/..' dist",
+    "postdeploy": "npm run sentry:sourcemaps"
   },
   "dependencies": {
+    "@sentry/cloudflare": "^10.38.0",
     "itty-router": "^5.0.22",
     "postgres": "^3.4.8",
     "valibot": "^1.2.0"
   },
   "devDependencies": {
+    "@sentry/cli": "^2.58.4",
     "@types/node": "^25.2.0",
     "type-fest": "^5.4.3",
     "typescript": "catalog:",

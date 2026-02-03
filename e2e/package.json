@@ -11,8 +11,11 @@
     "@vitest/coverage-istanbul": "^3.2.4",
     "execa": "^9.6.1",
     "postgres": "^3.4.8",
-    "supabase": "^2.75.0",
+    "supabase": "^2.75.1",
     "vitest": "catalog:",
     "wrangler": "catalog:"
+  },
+  "dependencies": {
+    "@sentry/cloudflare": "^10.38.0"
   }
 }
