@@ -1,0 +1,41 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "comapeo-metrics",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-12-01",
+	// Required for using postgres package and for sentry integration
+	"compatibility_flags": ["nodejs_compat"],
+	// For Sentry
+	"upload_source_maps": true,
+	"observability": {
+		// Enable logs and metrics in Cloudflare dashboard
+		"enabled": true,
+	},
+	"queues": {
+		"producers": [
+			{
+				"queue": "metrics-events",
+				"binding": "METRICS_QUEUE",
+			},
+		],
+		"consumers": [
+			{
+				"queue": "metrics-events",
+				"max_batch_size": 100,
+				"max_batch_timeout": 60,
+				"max_retries": 3,
+				"dead_letter_queue": "metrics-events-dlq",
+			},
+			{
+				"queue": "metrics-events-dlq",
+			},
+		],
+	},
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "06d14e7e58054425b485de8f56b1392d",
+			"localConnectionString": "postgresql://postgres:postgres@127.0.0.1:54352/postgres",
+		},
+	],
+}

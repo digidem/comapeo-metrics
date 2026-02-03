@@ -1,0 +1,40 @@
+{
+	"name": "@comapeo/metrics-client",
+	"version": "1.0.0-pre.0",
+	"author": "",
+	"description": "Metrics handling in CoMapeo applications",
+	"homepage": "https://github.com/digidem/comapeo-metrics/packages/metrics-client#readme",
+	"bugs": {
+		"url": "https://github.com/digidem/comapeo-metrics/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/digidem/comapeo-metrics.git"
+	},
+	"license": "MIT",
+	"type": "module",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist/",
+		"src/"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"publint": "pnpm run build && pnpm exec publint",
+		"prepack": "npm run build",
+		"test": "vitest run",
+		"types": "tsc"
+	},
+	"devDependencies": {
+		"@tsconfig/node18": "18.2.6",
+		"@types/node": "20.19.30",
+		"publint": "0.3.17",
+		"typescript": "catalog:",
+		"vitest": "4.0.18"
+	}
+}
