@@ -117,6 +117,13 @@ importers:
         version: 4.62.0
 
   packages/metrics-client:
+    dependencies:
+      type-fest:
+        specifier: ^5.4.3
+        version: 5.4.3
+      valibot:
+        specifier: ^1.2.0
+        version: 1.2.0(typescript@5.9.3)
     devDependencies:
       '@tsconfig/node18':
         specifier: 18.2.6

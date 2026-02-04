@@ -36,5 +36,9 @@
 		"publint": "0.3.17",
 		"typescript": "catalog:",
 		"vitest": "4.0.18"
+	},
+	"dependencies": {
+		"type-fest": "^5.4.3",
+		"valibot": "^1.2.0"
 	}
 }
