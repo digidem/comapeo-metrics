@@ -1,6 +1,5 @@
-// Configuration used for monorepo tooling. Each package/app should have their own configuration defined.
 {
-	"extends": ["./tsconfig.base.json"],
+	"extends": ["../../tsconfig.base.json", "@tsconfig/node18/tsconfig.json"],
 	"compilerOptions": {
 		"allowJs": true,
 		"checkJs": true,
@@ -12,16 +11,14 @@
 		"moduleDetection": "force",
 		"noEmit": true,
 		"noFallthroughCasesInSwitch": true,
-		"noImplicitAny": true,
 		"noImplicitOverride": true,
 		"noPropertyAccessFromIndexSignature": true,
 		"noUncheckedIndexedAccess": true,
 		"noUncheckedSideEffectImports": true,
-		"resolveJsonModule": true,
 		"skipLibCheck": true,
 		"strict": true,
 		"verbatimModuleSyntax": true
 	},
 	"include": ["**/*"],
-	"exclude": ["node_modules", "apps", "packages"]
+	"exclude": ["node_modules", "dist"]
 }

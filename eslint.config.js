@@ -27,7 +27,6 @@ export default defineConfig(
 		files: ['**/*.{js,ts}'],
 		extends: [tseslint.configs.recommended],
 		rules: {
-			'@typescript-eslint/array-type': ['warn', { default: 'generic' }],
 			// Allow unused vars if prefixed with `_` (https://typescript-eslint.io/rules/no-unused-vars/)
 			'@typescript-eslint/no-unused-vars': [
 				'error',
@@ -45,7 +44,7 @@ export default defineConfig(
 	},
 	{
 		name: 'test',
-		files: ['test/**'],
+		files: ['**/*.test.{js,ts,jsx,tsx}'],
 		extends: [pluginVitest.configs.recommended],
 	},
 	{

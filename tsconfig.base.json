@@ -1,6 +1,4 @@
-// Configuration used for monorepo tooling. Each package/app should have their own configuration defined.
 {
-	"extends": ["./tsconfig.base.json"],
 	"compilerOptions": {
 		"allowJs": true,
 		"checkJs": true,
@@ -22,6 +20,5 @@
 		"strict": true,
 		"verbatimModuleSyntax": true
 	},
-	"include": ["**/*"],
-	"exclude": ["node_modules", "apps", "packages"]
+	"exclude": ["node_modules"]
 }

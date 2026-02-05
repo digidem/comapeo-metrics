@@ -1,14 +1,13 @@
 packages:
-  - worker
-  - client
-  - e2e
+  - apps/*
+  - packages/*
 
 catalog:
   typescript: ^5.9.3
-  vitest: ^3.2.4
   wrangler: ^4.62.0
 
 ignoredBuiltDependencies:
+  - '@sentry/cli'
   - esbuild
   - sharp
   - workerd

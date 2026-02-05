@@ -1,16 +1,30 @@
 {
-  "name": "comapeo-metrics",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "packageManager": "pnpm@10.28.2",
-  "devDependencies": {
-    "typescript": "^5.9.3"
-  }
+	"name": "@comapeo/metrics-monorepo",
+	"private": true,
+	"version": "1.0.0",
+	"type": "module",
+	"packageManager": "pnpm@10.28.2",
+	"scripts": {
+		"checks": "pnpm run \"/^checks:.*/\"",
+		"checks:eslint": "eslint --cache .",
+		"checks:format": "prettier --cache --check .",
+		"types": "pnpm run --aggregate-output \"/^types:.*/\"",
+		"types:apps": "pnpm --filter \"./apps/**\" types",
+		"types:packages": "pnpm --filter \"./packages/**\" types",
+		"types:root": "tsc"
+	},
+	"devDependencies": {
+		"@eslint/compat": "2.0.2",
+		"@eslint/js": "9.39.2",
+		"@ianvs/prettier-plugin-sort-imports": "4.7.0",
+		"@types/node": "24.10.10",
+		"@vitest/eslint-plugin": "1.6.6",
+		"eslint": "9.39.2",
+		"globals": "17.3.0",
+		"husky": "9.1.7",
+		"nano-staged": "0.9.0",
+		"prettier": "3.8.1",
+		"typescript": "5.9.3",
+		"typescript-eslint": "8.54.0"
+	}
 }
