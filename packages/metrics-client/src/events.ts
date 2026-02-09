@@ -2,11 +2,11 @@ import type { JsonValue } from 'type-fest'
 import * as v from 'valibot'
 
 const BaseEventSchema = v.object({
+	eventName: v.pipe(v.string(), v.minLength(1)),
 	subjectId: v.pipe(v.string(), v.minLength(1)),
 	subjectCohort: v.optional(v.string()),
 	dedupeKey: v.optional(v.string()),
 	sequence: v.optional(v.number()),
-	eventName: v.pipe(v.string(), v.minLength(1)),
 	properties: v.optional(
 		v.record(v.string(), v.unknown() as v.GenericSchema<JsonValue>),
 	),
@@ -16,20 +16,20 @@ export type BaseEvent = v.InferInput<typeof BaseEventSchema>
 export const SessionStartEventSchema = v.object({
 	...BaseEventSchema.entries,
 	eventName: v.literal('session_start'),
-	// TODO: object or looseObject?
-	properties: v.looseObject({
-		startTime: v.number(),
-	}),
+	properties: v.objectWithRest(
+		{ startTime: v.number() },
+		v.unknown() as v.GenericSchema<JsonValue>,
+	),
 })
 export type SessionStartEvent = v.InferInput<typeof SessionStartEventSchema>
 
 export const SessionEndEventSchema = v.object({
 	...BaseEventSchema.entries,
 	eventName: v.literal('session_end'),
-	// TODO: object or looseObject?
-	properties: v.looseObject({
-		endTime: v.number(),
-	}),
+	properties: v.objectWithRest(
+		{ endTime: v.number() },
+		v.unknown() as v.GenericSchema<JsonValue>,
+	),
 })
 export type SessionEndEvent = v.InferInput<typeof SessionEndEventSchema>
 
@@ -38,25 +38,52 @@ export const ProjectStatsEventSchema = v.object({
 	eventName: v.literal('project_stats'),
 	dedupeKey: v.string(),
 	sequence: v.number(),
-	// TODO: object or looseObject?
-	properties: v.looseObject({
-		recordType: v.union([
-			v.literal('observation'),
-			v.literal('track'),
-			v.literal('member'),
-		]),
-		week: v.string(),
-		count: v.number(),
-		averagePerDay: v.number(),
-	}),
+	properties: v.objectWithRest(
+		{
+			recordType: v.union([
+				v.literal('observation'),
+				v.literal('track'),
+				v.literal('member'),
+			]),
+			week: v.string(),
+			count: v.number(),
+			averagePerDay: v.number(),
+		},
+		v.unknown() as v.GenericSchema<JsonValue>,
+	),
 })
 export type ProjectStatsEvent = v.InferInput<typeof ProjectStatsEventSchema>
 
-type SessionEventInternal = (SessionStartEvent | SessionEndEvent) & {
-	properties: {
-		sessionId: string
-	}
+type Storage = {
+	// TODO: null or separate method?
+	set: (value: Array<BaseEvent> | null) => void
+	get: () => Array<BaseEvent>
 }
 
-// TODO: Handles storage of queue when calling relevant methods
-export class EventsQueue extends Array {}
+export class EventsQueue {
+	#queue: Array<BaseEvent>
+	#storage: Storage
+
+	constructor({ storage }: { storage: Storage }) {
+		this.#queue = storage.get()
+		this.#storage = storage
+	}
+
+	get length() {
+		return this.#queue.length
+	}
+
+	get value() {
+		return this.#queue
+	}
+
+	add(...events: Array<BaseEvent>) {
+		this.#queue.push(...events)
+		this.#storage.set(this.#queue)
+	}
+
+	clear() {
+		this.#queue = []
+		this.#storage.set(null)
+	}
+}

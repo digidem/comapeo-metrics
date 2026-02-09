@@ -1,15 +1,17 @@
 import * as v from 'valibot'
 
 import {
+	EventsQueue,
 	ProjectStatsEventSchema,
 	SessionEndEventSchema,
 	SessionStartEventSchema,
+	type BaseEvent,
 	type ProjectStatsEvent,
 	type SessionEndEvent,
 	type SessionStartEvent,
 } from './events.js'
 
-type Options = {
+export type Options = {
 	fetch?: (
 		input: string | URL | Request,
 		options?: RequestInit,
@@ -17,31 +19,32 @@ type Options = {
 	heartbeatInterval?: number
 	metricsEndpoint: string
 	retryInterval?: number
+	// TODO: Somewhat clunky API but TS gets difficult when trying to do conditional types
 	storage: {
-		// TODO: Ideally narrow return type based on key
-		get: (key: 'events_queue' | 'heartbeat' | 'session_end') => unknown
+		getEvents: () => Array<BaseEvent>
+		// TODO: null vs separate method?
+		setEvents: (queue: Array<BaseEvent> | null) => void
 
-		// TODO: Ideally narrow value type based on key
-		set: (
-			key: 'events_queue' | 'heartbeat' | 'session_end',
-			value: unknown,
+		getTimestamp: (type: 'heartbeat' | 'session_end') => number | null
+		// TODO: null vs separate method?
+		setTimestamp: (
+			type: 'heartbeat' | 'session_end',
+			value: number | null,
 		) => void
-
-		remove: (key: 'heartbeat' | 'session_end' | 'events_queue') => void
 	}
 }
 
 export class ComapeoMetricsClient {
-	#eventsQueue: Array<unknown>
+	#activeSessionId: string | null = null
+	#eventsQueue
 	#fetch
-	#retryInterval
 	#flushingPromise: Promise<Response> | null = null
 	#heartbeatInterval
 	#heartbeatIntervalId: NodeJS.Timeout | null = null
 	#metricsEndpoint
+	#retryInterval
 	#retryIntervalId: NodeJS.Timeout | null = null
 	#storage
-	#sessionIsActive = false
 
 	constructor({
 		fetch = globalThis.fetch,
@@ -50,8 +53,9 @@ export class ComapeoMetricsClient {
 		retryInterval = 10_000,
 		storage,
 	}: Options) {
-		// TODO: Initialize using storage
-		this.#eventsQueue = []
+		this.#eventsQueue = new EventsQueue({
+			storage: { get: storage.getEvents, set: storage.setEvents },
+		})
 		this.#fetch = fetch
 		this.#heartbeatInterval = heartbeatInterval
 		this.#metricsEndpoint = metricsEndpoint
@@ -77,85 +81,129 @@ export class ComapeoMetricsClient {
 		}
 	}
 
-	// TODO: ideally can support user-defined events
-	addEvent(event: SessionStartEvent | SessionEndEvent | ProjectStatsEvent) {
-		if (v.is(SessionStartEventSchema, event)) {
-			this.#sessionIsActive = true
+	addEvent(
+		// TODO: supporting BaseEvent causes inference looseness with known events
+		event: SessionStartEvent | SessionEndEvent | ProjectStatsEvent | BaseEvent,
+	) {
+		// TODO: Dedupe if `dedupeKey` is present
 
-			const lastHeartbeat = this.#storage.get('heartbeat')
+		if (event.eventName === SessionStartEventSchema.entries.eventName.literal) {
+			v.assert(SessionStartEventSchema, event)
+
+			this.#activeSessionId = generateSessionId()
+
+			const lastHeartbeat = this.#storage.getTimestamp('heartbeat')
+
+			const now = Date.now()
 
 			if (
 				typeof lastHeartbeat === 'number' &&
-				Date.now() - lastHeartbeat > this.#heartbeatInterval
+				now - lastHeartbeat > this.#heartbeatInterval
 			) {
-				// TODO: Push session_end event to queue with endTime = lastHeartbeat
-				this.#eventsQueue.push({
+				this.#eventsQueue.add({
 					...event,
 					eventName: 'session_end',
 					properties: {
+						sessionId: this.#activeSessionId,
 						endTime: lastHeartbeat,
 					},
 				} satisfies SessionEndEvent)
 			}
 
-			const lastSessionEnd = this.#storage.get('session_end')
+			const lastSessionEnd = this.#storage.getTimestamp('session_end')
 
 			// TODO: Check logic
 			if (
 				typeof lastSessionEnd === 'number' &&
-				Date.now() - lastSessionEnd < this.#heartbeatInterval
+				now - lastSessionEnd < this.#heartbeatInterval
 			) {
-				this.#storage.remove('session_end')
-				return
+				this.#storage.setTimestamp('session_end', null)
 			}
 
+			this.#eventsQueue.add({
+				...event,
+				properties: {
+					...event.properties,
+					sessionId: this.#activeSessionId,
+				},
+			})
+
 			this.#heartbeatIntervalId = setInterval(() => {
-				this.#storage.set('heartbeat', Date.now())
+				this.#storage.setTimestamp('heartbeat', Date.now())
 			}, this.#heartbeatInterval)
+		} else if (
+			event.eventName === SessionEndEventSchema.entries.eventName.literal
+		) {
+			v.assert(SessionEndEventSchema, event)
 
-			this.#eventsQueue.push(event)
-		} else if (v.is(SessionEndEventSchema, event)) {
-			this.#sessionIsActive = false
+			try {
+				this.#eventsQueue.add({
+					...event,
+					properties: {
+						...event.properties,
+						sessionId: this.#activeSessionId,
+					},
+				})
 
-			this.#eventsQueue.push(event)
+				this.#storage.setTimestamp('session_end', event.properties.endTime)
+			} finally {
+				// TODO: Setting this causes flushEvent to no-op. Review expected behavior.
+				this.#activeSessionId = null
+			}
 
 			if (this.#heartbeatIntervalId) {
 				clearInterval(this.#heartbeatIntervalId)
 				this.#heartbeatIntervalId = null
 			}
-		} else if (v.is(ProjectStatsEventSchema, event)) {
-			this.#eventsQueue.push(event)
+		} else if (
+			event.eventName === ProjectStatsEventSchema.entries.eventName.literal
+		) {
+			v.assert(ProjectStatsEventSchema, event)
+
+			this.#eventsQueue.add(event)
 		} else {
-			this.#eventsQueue.push(event)
+			this.#eventsQueue.add(event)
 		}
 
+		// TODO: Need to add catch handler here?
 		this.#flushEvents()
 	}
 
 	async #flushEvents() {
-		if (!this.#sessionIsActive) return
+		// TODO: Is this desired?
+		if (!this.#activeSessionId) return
 
 		if (this.#eventsQueue.length === 0) return
 
 		await this.#flushingPromise
 
-		const eventsToSend = [...this.#eventsQueue]
+		const eventsToSend = [...this.#eventsQueue.value]
 
-		this.#eventsQueue = []
+		this.#eventsQueue.clear()
 
 		try {
 			this.#flushingPromise = this.#fetch(this.#metricsEndpoint, {
 				method: 'POST',
-				body: JSON.stringify({ events: ndjson(this.#eventsQueue) }),
+				body: JSON.stringify({ events: ndjson(eventsToSend) }),
 			})
 
-			await this.#flushingPromise
-		} catch (error) {
-			this.#eventsQueue.unshift(...eventsToSend)
+			const response = await this.#flushingPromise
+
+			if (!response.ok) {
+				throw new Error(`Response status: ${response.status}`)
+			}
+		} catch (_error) {
+			// TODO: Do something with error?
+			this.#eventsQueue.add(...eventsToSend)
 		} finally {
 			this.#flushingPromise = null
 		}
 	}
+}
+
+// TODO: Figure out proper implementation
+function generateSessionId(): string {
+	return Date.now().toString()
 }
 
 function ndjson(events: Array<unknown>): string {
