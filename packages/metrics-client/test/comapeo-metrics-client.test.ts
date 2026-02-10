@@ -15,7 +15,7 @@ describe('addEvent()', () => {
 	})
 
 	it('throws when attempting to add invalid known events', () => {
-		const client = new ComapeoMetricsClient(setupOptions())
+		const client = new ComapeoMetricsClient(createOptions())
 
 		expect(() => {
 			client.addEvent({
@@ -43,7 +43,7 @@ describe('addEvent()', () => {
 		vi.useFakeTimers()
 
 		const heartbeatInterval = 5_000
-		const options = setupOptions({ heartbeatInterval })
+		const options = createOptions({ heartbeatInterval })
 
 		const fetchMock = vi.spyOn(options, 'fetch')
 
@@ -112,7 +112,7 @@ describe('addEvent()', () => {
 	})
 
 	it('persists events when sending fails', async () => {
-		const options = setupOptions()
+		const options = createOptions()
 
 		const fetchSpy = vi.spyOn(options, 'fetch')
 
@@ -221,7 +221,7 @@ describe('setOnline()', () => {
 
 	it('does not affect heartbeats', async () => {
 		const heartbeatInterval = 5_000
-		const options = setupOptions({ heartbeatInterval })
+		const options = createOptions({ heartbeatInterval })
 
 		const setTimestampSpy = vi.spyOn(options.storage, 'setTimestamp')
 
@@ -262,7 +262,7 @@ describe('setOnline()', () => {
 	it('does affect retries', async () => {
 		const retryInterval = 5_000
 
-		const options = setupOptions({ retryInterval })
+		const options = createOptions({ retryInterval })
 
 		const fetchSpy = vi.spyOn(options, 'fetch')
 
@@ -300,7 +300,7 @@ describe('setOnline()', () => {
 	})
 })
 
-function setupOptions(
+function createOptions(
 	overrides?: Partial<ComapeoMetricsClientOptions>,
 ): ComapeoMetricsClientOptions {
 	let eventsQueue: Array<MetricsEvent> | null = null
