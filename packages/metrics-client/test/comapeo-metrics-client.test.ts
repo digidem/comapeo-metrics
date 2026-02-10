@@ -1,14 +1,12 @@
 import { setTimeout } from 'node:timers/promises'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type {
-	BaseEvent,
-	ProjectStatsEvent,
-	SessionStartEvent,
-} from '../src/events.js'
 import {
 	ComapeoMetricsClient,
 	type ComapeoMetricsClientOptions,
+	type MetricsEvent,
+	type ProjectStatsEvent,
+	type SessionStartEvent,
 } from '../src/index.js'
 
 describe('addEvent()', () => {
@@ -305,7 +303,7 @@ describe('setOnline()', () => {
 function setupOptions(
 	overrides?: Partial<ComapeoMetricsClientOptions>,
 ): ComapeoMetricsClientOptions {
-	let eventsQueue: Array<BaseEvent> | null = null
+	let eventsQueue: Array<MetricsEvent> | null = null
 	let sessionEndTs: number | null = null
 	let heartbeatTs: number | null = null
 

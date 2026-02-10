@@ -4,6 +4,7 @@ export {
 } from './comapeo-metrics-client.js'
 
 export type {
+	MetricsEvent,
 	ProjectStatsEvent,
 	SessionEndEvent,
 	SessionStartEvent,

@@ -5,7 +5,7 @@ import {
 	ProjectStatsEventSchema,
 	SessionEndEventSchema,
 	SessionStartEventSchema,
-	type BaseEvent,
+	type MetricsEvent,
 	type ProjectStatsEvent,
 	type SessionEndEvent,
 	type SessionStartEvent,
@@ -21,9 +21,9 @@ export type Options = {
 	retryInterval?: number
 	// TODO: Somewhat clunky API but TS gets difficult when trying to do conditional types
 	storage: {
-		getEvents: () => Array<BaseEvent>
+		getEvents: () => Array<MetricsEvent>
 		// TODO: null vs separate method?
-		setEvents: (queue: Array<BaseEvent> | null) => void
+		setEvents: (queue: Array<MetricsEvent> | null) => void
 
 		getTimestamp: (type: 'heartbeat' | 'session_end') => number | null
 		// TODO: null vs separate method?
@@ -83,7 +83,11 @@ export class ComapeoMetricsClient {
 
 	addEvent(
 		// TODO: supporting BaseEvent causes inference looseness with known events
-		event: SessionStartEvent | SessionEndEvent | ProjectStatsEvent | BaseEvent,
+		event:
+			| SessionStartEvent
+			| SessionEndEvent
+			| ProjectStatsEvent
+			| MetricsEvent,
 	) {
 		// TODO: Dedupe if `dedupeKey` is present
 

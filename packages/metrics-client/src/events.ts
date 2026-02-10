@@ -1,7 +1,7 @@
 import type { JsonValue } from 'type-fest'
 import * as v from 'valibot'
 
-const BaseEventSchema = v.object({
+const MetricsEventSchema = v.object({
 	eventName: v.pipe(v.string(), v.minLength(1)),
 	subjectId: v.pipe(v.string(), v.minLength(1)),
 	subjectCohort: v.optional(v.string()),
@@ -11,10 +11,10 @@ const BaseEventSchema = v.object({
 		v.record(v.string(), v.unknown() as v.GenericSchema<JsonValue>),
 	),
 })
-export type BaseEvent = v.InferInput<typeof BaseEventSchema>
+export type MetricsEvent = v.InferInput<typeof MetricsEventSchema>
 
 export const SessionStartEventSchema = v.object({
-	...BaseEventSchema.entries,
+	...MetricsEventSchema.entries,
 	eventName: v.literal('session_start'),
 	properties: v.objectWithRest(
 		{ startTime: v.number() },
@@ -24,7 +24,7 @@ export const SessionStartEventSchema = v.object({
 export type SessionStartEvent = v.InferInput<typeof SessionStartEventSchema>
 
 export const SessionEndEventSchema = v.object({
-	...BaseEventSchema.entries,
+	...MetricsEventSchema.entries,
 	eventName: v.literal('session_end'),
 	properties: v.objectWithRest(
 		{ endTime: v.number() },
@@ -34,7 +34,7 @@ export const SessionEndEventSchema = v.object({
 export type SessionEndEvent = v.InferInput<typeof SessionEndEventSchema>
 
 export const ProjectStatsEventSchema = v.object({
-	...BaseEventSchema.entries,
+	...MetricsEventSchema.entries,
 	eventName: v.literal('project_stats'),
 	dedupeKey: v.string(),
 	sequence: v.number(),
@@ -56,12 +56,12 @@ export type ProjectStatsEvent = v.InferInput<typeof ProjectStatsEventSchema>
 
 type Storage = {
 	// TODO: null or separate method?
-	set: (value: Array<BaseEvent> | null) => void
-	get: () => Array<BaseEvent>
+	set: (value: Array<MetricsEvent> | null) => void
+	get: () => Array<MetricsEvent>
 }
 
 export class EventsQueue {
-	#queue: Array<BaseEvent>
+	#queue: Array<MetricsEvent>
 	#storage: Storage
 
 	constructor({ storage }: { storage: Storage }) {
@@ -77,7 +77,7 @@ export class EventsQueue {
 		return this.#queue
 	}
 
-	add(...events: Array<BaseEvent>) {
+	add(...events: Array<MetricsEvent>) {
 		this.#queue.push(...events)
 		this.#storage.set(this.#queue)
 	}
