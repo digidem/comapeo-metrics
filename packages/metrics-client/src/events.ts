@@ -78,12 +78,12 @@ export class EventsQueue {
 	}
 
 	add(...events: Array<MetricsEvent>) {
-		this.#queue.push(...events)
 		this.#storage.set(this.#queue)
+		this.#queue.push(...events)
 	}
 
 	clear() {
-		this.#queue = []
 		this.#storage.set(null)
+		this.#queue = []
 	}
 }
