@@ -1,10 +1,5 @@
-import * as v from 'valibot'
-
 import {
 	EventsQueue,
-	ProjectStatsEventSchema,
-	SessionEndEventSchema,
-	SessionStartEventSchema,
 	type MetricsEvent,
 	type ProjectStatsEvent,
 	type SessionEndEvent,
@@ -17,21 +12,26 @@ export type Options = {
 		options?: RequestInit,
 	) => Promise<Response>
 	heartbeatInterval?: number
+	sessionTimeout?: number
 	metricsEndpoint: string
-	retryInterval?: number
-	// TODO: Somewhat clunky API but TS gets difficult when trying to do conditional types
 	storage: {
 		getEvents: () => Array<MetricsEvent>
-		// TODO: null vs separate method?
 		setEvents: (queue: Array<MetricsEvent> | null) => void
-
-		getTimestamp: (type: 'heartbeat' | 'session_end') => number | null
-		// TODO: null vs separate method?
-		setTimestamp: (
-			type: 'heartbeat' | 'session_end',
-			value: number | null,
+		getHeartbeat: () => {
+			sessionId: string
+			timestamp: number
+		} | null
+		setHeartbeat: (
+			value: {
+				sessionId: string
+				timestamp: number
+			} | null,
 		) => void
 	}
+}
+
+type QueuedSessionEvent = (SessionStartEvent | SessionEndEvent) & {
+	properties: { sessionId: string }
 }
 
 export class ComapeoMetricsClient {
@@ -42,86 +42,83 @@ export class ComapeoMetricsClient {
 	#heartbeatInterval
 	#heartbeatIntervalId: NodeJS.Timeout | null = null
 	#metricsEndpoint
-	#retryInterval
-	#retryIntervalId: NodeJS.Timeout | null = null
+	#sessionTimeout
 	#storage
 
 	constructor({
 		fetch = globalThis.fetch,
 		metricsEndpoint,
 		heartbeatInterval = 5_000,
-		retryInterval = 10_000,
 		storage,
+		sessionTimeout = 10_000,
 	}: Options) {
+		this.#fetch = fetch
+		this.#storage = storage
 		this.#eventsQueue = new EventsQueue({
 			storage: { get: storage.getEvents, set: storage.setEvents },
 		})
-		this.#fetch = fetch
-		this.#heartbeatInterval = heartbeatInterval
+
 		this.#metricsEndpoint = metricsEndpoint
-		this.#retryInterval = retryInterval
-		this.#storage = storage
-
-		// TODO: debounce #flushEvents()
-		// this.#flushEvents = debounce(this.#flushEvents.bind(this), 1000)
+		this.#heartbeatInterval = heartbeatInterval
+		this.#sessionTimeout = sessionTimeout
 	}
 
-	setOnline(isOnline: boolean) {
-		if (this.#retryIntervalId) {
-			clearInterval(this.#retryIntervalId)
-			this.#retryIntervalId = null
-		}
-
-		if (isOnline) {
-			this.#flushEvents()
-
-			this.#retryIntervalId = setInterval(() => {
-				this.#flushEvents()
-			}, this.#retryInterval)
-		}
-	}
-
-	addEvent(
-		// TODO: supporting BaseEvent causes inference looseness with known events
-		event:
-			| SessionStartEvent
-			| SessionEndEvent
-			| ProjectStatsEvent
-			| MetricsEvent,
-	) {
-		// TODO: Dedupe if `dedupeKey` is present
-
-		if (event.eventName === SessionStartEventSchema.entries.eventName.literal) {
-			v.assert(SessionStartEventSchema, event)
-
-			this.#activeSessionId = generateSessionId()
-
-			const lastHeartbeat = this.#storage.getTimestamp('heartbeat')
+	// TODO: Support custom metrics events
+	addEvent(event: SessionStartEvent | SessionEndEvent | ProjectStatsEvent) {
+		if (event.eventName === 'session_start') {
+			// 1. Determine if a session end event needs to be added first based on the heartbeat.
+			const lastHeartbeat = this.#storage.getHeartbeat()
 
 			const now = Date.now()
 
-			if (
-				typeof lastHeartbeat === 'number' &&
-				now - lastHeartbeat > this.#heartbeatInterval
-			) {
-				this.#eventsQueue.add({
-					...event,
-					eventName: 'session_end',
-					properties: {
-						sessionId: this.#activeSessionId,
-						endTime: lastHeartbeat,
-					},
-				} satisfies SessionEndEvent)
+			if (lastHeartbeat) {
+				const sessionTimeoutExceeded =
+					now - lastHeartbeat.timestamp > this.#sessionTimeout
+
+				if (sessionTimeoutExceeded) {
+					this.#eventsQueue.add({
+						...event,
+						eventName: 'session_end',
+						properties: {
+							endTime: lastHeartbeat.timestamp,
+							sessionId: lastHeartbeat.sessionId,
+						},
+					} satisfies QueuedSessionEvent)
+				} else {
+					this.#activeSessionId = lastHeartbeat.sessionId
+				}
 			}
 
-			const lastSessionEnd = this.#storage.getTimestamp('session_end')
+			// 2. Potentially remove the most recently queued session end event.
+			// If there is already a session end event that was added recently enough,
+			// we treat this call as a continuation of the session that the end event refers to by
+			// removing the queued session end event, updating the active session ID, and not adding the session start event.
+			for (let i = this.#eventsQueue.value.length - 1; i >= 0; i--) {
+				const e = this.#eventsQueue.value[i]!
 
-			// TODO: Check logic
-			if (
-				typeof lastSessionEnd === 'number' &&
-				now - lastSessionEnd < this.#heartbeatInterval
-			) {
-				this.#storage.setTimestamp('session_end', null)
+				if (
+					e.eventName === 'session_end' &&
+					!!e.properties &&
+					typeof e.properties['sessionId'] === 'string' &&
+					typeof e.properties['endTime'] === 'number' &&
+					now - e.properties['endTime'] < this.#sessionTimeout
+				) {
+					const updatedQueueValues = [...this.#eventsQueue.value]
+
+					updatedQueueValues.splice(i, 1)
+
+					this.#eventsQueue.clear()
+					this.#eventsQueue.add(...updatedQueueValues)
+
+					this.#activeSessionId = e.properties['sessionId']
+
+					return
+				}
+			}
+
+			// 3. Add session start event
+			if (!this.#activeSessionId) {
+				this.#activeSessionId = generateSessionId()
 			}
 
 			this.#eventsQueue.add({
@@ -130,62 +127,69 @@ export class ComapeoMetricsClient {
 					...event.properties,
 					sessionId: this.#activeSessionId,
 				},
-			})
+			} satisfies QueuedSessionEvent)
 
+			// 4. Update internal state
 			this.#heartbeatIntervalId = setInterval(() => {
-				this.#storage.setTimestamp('heartbeat', Date.now())
-			}, this.#heartbeatInterval)
-		} else if (
-			event.eventName === SessionEndEventSchema.entries.eventName.literal
-		) {
-			v.assert(SessionEndEventSchema, event)
+				if (!this.#activeSessionId) {
+					return
+				}
 
-			try {
-				this.#eventsQueue.add({
-					...event,
-					properties: {
-						...event.properties,
-						sessionId: this.#activeSessionId,
-					},
+				this.#storage.setHeartbeat({
+					timestamp: Date.now(),
+					sessionId: this.#activeSessionId,
 				})
+			}, this.#heartbeatInterval)
 
-				this.#storage.setTimestamp('session_end', event.properties.endTime)
-			} finally {
-				// TODO: Setting this causes flushEvent to no-op. Review expected behavior.
-				this.#activeSessionId = null
+			// 4. Flush
+			this.#flushEvents()
+
+			return
+		}
+
+		if (event.eventName === 'session_end') {
+			// TODO: Throw error here?
+			if (!this.#activeSessionId) {
+				return
 			}
+
+			// 1. Add event to queue
+			this.#eventsQueue.add({
+				...event,
+				properties: {
+					...event.properties,
+					sessionId: this.#activeSessionId,
+				},
+			} satisfies QueuedSessionEvent)
+
+			// 2. Update internal state
+			this.#activeSessionId = null
 
 			if (this.#heartbeatIntervalId) {
 				clearInterval(this.#heartbeatIntervalId)
 				this.#heartbeatIntervalId = null
 			}
-		} else if (
-			event.eventName === ProjectStatsEventSchema.entries.eventName.literal
-		) {
-			v.assert(ProjectStatsEventSchema, event)
 
-			this.#eventsQueue.add(event)
-		} else {
-			this.#eventsQueue.add(event)
+			return
 		}
 
-		// TODO: Need to add catch handler here?
-		this.#flushEvents()
+		this.#eventsQueue.add(event)
 	}
 
 	async #flushEvents() {
-		// TODO: Is this desired?
 		if (!this.#activeSessionId) return
 
 		if (this.#eventsQueue.length === 0) return
 
 		await this.#flushingPromise
 
+		// TODO: Dedupe events based on dedupeKey
 		const eventsToSend = [...this.#eventsQueue.value]
 
 		this.#eventsQueue.clear()
 
 		try {
+			// TODO: Keep retrying until a certain point (maybe use exponential backoff?)
 			this.#flushingPromise = this.#fetch(this.#metricsEndpoint, {
 				method: 'POST',
 				body: JSON.stringify({ events: ndjson(eventsToSend) }),
