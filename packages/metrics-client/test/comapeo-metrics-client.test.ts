@@ -1,10 +1,11 @@
-import { setTimeout } from 'node:timers/promises'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import {
 	ComapeoMetricsClient,
 	type ComapeoMetricsClientOptions,
 	type MetricsEvent,
+	type ProjectStatsEvent,
+	type SessionStartEvent,
 } from '../src/index.js'
 
 beforeEach(() => {
@@ -15,7 +16,7 @@ afterEach(() => {
 	vi.resetAllMocks()
 })
 
-it('no-ops when adding session end event while session has not been started', async () => {
+test('adding events that are not session start events does nothing while session has not been started', async () => {
 	const heartbeatInterval = 5_000
 
 	const options = createOptions({ heartbeatInterval })
@@ -30,17 +31,30 @@ it('no-ops when adding session end event while session has not been started', as
 		properties: { endTime: Date.now() },
 	})
 
-	await setTimeout()
+	await vi.advanceTimersByTimeAsync(0)
+
+	client.addEvent({
+		eventName: 'project_stats',
+		subjectId: 'a',
+		dedupeKey: 'some_dedupe_key',
+		sequence: 0,
+		properties: {
+			averagePerDay: 0,
+			count: 0,
+			recordType: 'observation',
+			week: '2025-01',
+		},
+	})
+
+	await vi.advanceTimersByTimeAsync(heartbeatInterval * 2)
 
 	expect(fetchMock).not.toBeCalled()
 	expect(options.storage.getEvents()).toStrictEqual([])
 
-	vi.advanceTimersByTime(heartbeatInterval * 2)
-
 	expect(options.storage.getHeartbeat()).toBeNull()
 })
 
-it('sent session events have a sessionId property', async () => {
+test('session timeout is respected', async () => {
 	const sessionTimeout = 10_000
 
 	const options = createOptions({ sessionTimeout })
@@ -57,7 +71,123 @@ it('sent session events have a sessionId property', async () => {
 		},
 	})
 
-	await setTimeout()
+	await vi.advanceTimersByTimeAsync(0)
+
+	fetchMock.mockClear()
+
+	client.addEvent({
+		eventName: 'session_end',
+		subjectId: 'a',
+		properties: {
+			endTime: Date.now(),
+		},
+	})
+
+	await vi.advanceTimersByTimeAsync(0)
+
+	client.addEvent({
+		eventName: 'session_start',
+		subjectId: 'a',
+		properties: {
+			startTime: Date.now(),
+		},
+	})
+
+	await vi.advanceTimersByTimeAsync(0)
+
+	expect(fetchMock).not.toBeCalled()
+
+	await vi.advanceTimersByTimeAsync(sessionTimeout)
+
+	client.addEvent({
+		eventName: 'session_start',
+		subjectId: 'a',
+		properties: {
+			startTime: Date.now(),
+		},
+	})
+
+	await vi.advanceTimersByTimeAsync(0)
+
+	expect(fetchMock).toBeCalled()
+})
+
+test('only session start events trigger sending', async () => {
+	const sessionTimeout = 10_000
+
+	const options = createOptions({ sessionTimeout })
+
+	const fetchMock = vi.spyOn(options, 'fetch')
+
+	const client = new ComapeoMetricsClient(options)
+
+	client.addEvent({
+		eventName: 'session_start',
+		subjectId: 'a',
+		properties: {
+			startTime: Date.now(),
+		},
+	})
+
+	await vi.advanceTimersByTimeAsync(0)
+
+	expect(fetchMock).toBeCalled()
+
+	fetchMock.mockClear()
+
+	await vi.advanceTimersByTimeAsync(sessionTimeout)
+
+	client.addEvent({
+		eventName: 'project_stats',
+		subjectId: 'a',
+		dedupeKey: 'some_dedupe_key',
+		sequence: 0,
+		properties: {
+			averagePerDay: 0,
+			count: 0,
+			recordType: 'observation',
+			week: '2025-01',
+		},
+	})
+
+	await vi.advanceTimersByTimeAsync(0)
+
+	expect(fetchMock).not.toBeCalled()
+	fetchMock.mockClear()
+
+	await vi.advanceTimersByTimeAsync(sessionTimeout)
+
+	client.addEvent({
+		eventName: 'session_end',
+		subjectId: 'a',
+		properties: {
+			endTime: Date.now(),
+		},
+	})
+
+	await vi.advanceTimersByTimeAsync(0)
+
+	expect(fetchMock).not.toBeCalled()
+})
+
+test('sent session events have a sessionId property', async () => {
+	const sessionTimeout = 10_000
+
+	const options = createOptions({ sessionTimeout })
+
+	const fetchMock = vi.spyOn(options, 'fetch')
+
+	const client = new ComapeoMetricsClient(options)
+
+	client.addEvent({
+		eventName: 'session_start',
+		subjectId: 'a',
+		properties: {
+			startTime: Date.now(),
+		},
+	})
+
+	await vi.advanceTimersByTimeAsync(0)
 
 	expect(
 		extractSentEvents(fetchMock.mock.lastCall?.[1]!.body as string),
@@ -71,7 +201,7 @@ it('sent session events have a sessionId property', async () => {
 		},
 	])
 
-	vi.advanceTimersByTime(sessionTimeout)
+	await vi.advanceTimersByTimeAsync(sessionTimeout)
 
 	client.addEvent({
 		eventName: 'session_start',
@@ -81,7 +211,7 @@ it('sent session events have a sessionId property', async () => {
 		},
 	})
 
-	await setTimeout()
+	await vi.advanceTimersByTimeAsync(0)
 
 	expect(
 		extractSentEvents(fetchMock.mock.lastCall?.[1]!.body as string),
@@ -96,37 +226,17 @@ it('sent session events have a sessionId property', async () => {
 	])
 })
 
-it('does not send when session timeout has not been reached while adding session start event', async () => {
-	const sessionTimeout = 10_000
-
-	const options = createOptions({ sessionTimeout })
+test('failed sends are retried', async () => {
+	const options = createOptions()
 
 	const fetchMock = vi.spyOn(options, 'fetch')
 
+	fetchMock.mockResolvedValueOnce(new Response('Server Error', { status: 500 }))
+	fetchMock.mockResolvedValueOnce(new Response('Not Found', { status: 404 }))
+	fetchMock.mockRejectedValueOnce(new Error('Some runtime error'))
+
 	const client = new ComapeoMetricsClient(options)
 
-	// 1. Setup
-	client.addEvent({
-		eventName: 'session_start',
-		subjectId: 'a',
-		properties: {
-			startTime: Date.now(),
-		},
-	})
-	await setTimeout()
-	fetchMock.mockClear()
-
-	// 2. Actual test
-	client.addEvent({
-		eventName: 'session_end',
-		subjectId: 'a',
-		properties: {
-			endTime: Date.now(),
-		},
-	})
-
-	await setTimeout()
-
 	client.addEvent({
 		eventName: 'session_start',
 		subjectId: 'a',
@@ -135,12 +245,12 @@ it('does not send when session timeout has not been reached while adding session
 		},
 	})
 
-	await setTimeout()
+	await vi.advanceTimersByTimeAsync(10_000)
 
-	expect(fetchMock).not.toBeCalled()
+	expect(fetchMock).toBeCalledTimes(3)
 })
 
-it('sends when session start event is added after session timeout', async () => {
+test('events that were not sent due to failure are included in subsequent send attempts', async () => {
 	const sessionTimeout = 10_000
 
 	const options = createOptions({ sessionTimeout })
@@ -149,31 +259,49 @@ it('sends when session start event is added after session timeout', async () => 
 
 	const client = new ComapeoMetricsClient(options)
 
-	// 1. Setup
-	client.addEvent({
-		eventName: 'session_start',
+	fetchMock.mockRejectedValue(new Error('Some error'))
+
+	const eventA: SessionStartEvent = {
+		eventName: 'session_start' as const,
 		subjectId: 'a',
 		properties: {
 			startTime: Date.now(),
 		},
-	})
-	await setTimeout()
-	fetchMock.mockClear()
+	}
 
-	// 2. Actual test
-	client.addEvent({
-		eventName: 'session_end' as const,
-		subjectId: 'a',
+	client.addEvent(eventA)
+
+	await vi.advanceTimersByTimeAsync(0)
+
+	expect(fetchMock).toHaveBeenCalled()
+
+	await vi.advanceTimersByTimeAsync(sessionTimeout)
+
+	const eventB: SessionStartEvent = {
+		eventName: 'session_start',
+		subjectId: 'b',
 		properties: {
-			endTime: Date.now(),
+			startTime: Date.now(),
 		},
-	})
+	}
 
-	await setTimeout()
+	client.addEvent(eventB)
 
-	expect(fetchMock).not.toHaveBeenCalled()
+	await vi.advanceTimersByTimeAsync(0)
 
-	vi.advanceTimersByTime(sessionTimeout)
+	expect(
+		extractSentEvents(fetchMock.mock.lastCall?.[1]!.body as string),
+	).toMatchObject([eventA, eventB])
+})
+
+test('dedupes events when sending', async () => {
+	const sessionTimeout = 10_000
+
+	const options = createOptions({ sessionTimeout })
+
+	const fetchMock = vi.spyOn(options, 'fetch')
+
+	const client = new ComapeoMetricsClient(options)
 
 	client.addEvent({
 		eventName: 'session_start' as const,
@@ -183,54 +311,56 @@ it('sends when session start event is added after session timeout', async () => 
 		},
 	})
 
-	await setTimeout()
+	await vi.advanceTimersByTimeAsync(0)
 
-	expect(
-		extractSentEvents(fetchMock.mock.lastCall?.[1]!.body as string),
-	).toHaveLength(2)
-})
-
-it('events that were not sent due to failure are included in subsequent send attempts', async () => {
-	const sessionTimeout = 10_000
-
-	const options = createOptions({ sessionTimeout })
-
-	const fetchMock = vi.spyOn(options, 'fetch')
-
-	const client = new ComapeoMetricsClient(options)
-
-	fetchMock.mockImplementation(async () => {
-		throw new Error('Some error')
-	})
+	const dedupeKey = 'some_dedupe_key'
 
 	client.addEvent({
-		eventName: 'session_start' as const,
+		eventName: 'project_stats',
 		subjectId: 'a',
+		dedupeKey,
+		sequence: 0,
 		properties: {
-			startTime: Date.now(),
+			averagePerDay: 0,
+			count: 0,
+			recordType: 'observation',
+			week: '2025-01',
 		},
 	})
 
-	await setTimeout()
+	const projectStatsB: ProjectStatsEvent = {
+		eventName: 'project_stats',
+		subjectId: 'b',
+		dedupeKey,
+		sequence: 1,
+		properties: {
+			averagePerDay: 1,
+			count: 1,
+			recordType: 'observation',
+			week: '2025-01',
+		},
+	}
 
-	vi.advanceTimersByTime(sessionTimeout)
+	client.addEvent(projectStatsB)
 
-	client.addEvent({
+	await vi.advanceTimersByTimeAsync(sessionTimeout)
+
+	const sessionStartB: SessionStartEvent = {
 		eventName: 'session_start',
-		subjectId: 'a',
+		subjectId: 'b',
 		properties: {
 			startTime: Date.now(),
 		},
-	})
+	}
 
-	await setTimeout()
+	client.addEvent(sessionStartB)
+
+	await vi.advanceTimersByTimeAsync(0)
 
 	expect(
 		extractSentEvents(fetchMock.mock.lastCall?.[1]!.body as string),
-	).toHaveLength(2)
+	).toMatchObject([projectStatsB, sessionStartB])
 })
-
-it.todo('dedupes project stats events when sending')
 
 function createOptions(
 	overrides?: Partial<ComapeoMetricsClientOptions>,

@@ -1,7 +1,7 @@
 import type { JsonValue } from 'type-fest'
 import * as v from 'valibot'
 
-const MetricsEventSchema = v.object({
+export const MetricsEventSchema = v.object({
 	eventName: v.pipe(v.string(), v.minLength(1)),
 	subjectId: v.pipe(v.string(), v.minLength(1)),
 	subjectCohort: v.optional(v.string()),
@@ -55,7 +55,6 @@ export const ProjectStatsEventSchema = v.object({
 export type ProjectStatsEvent = v.InferInput<typeof ProjectStatsEventSchema>
 
 type Storage = {
-	// TODO: null or separate method?
 	set: (value: Array<MetricsEvent> | null) => void
 	get: () => Array<MetricsEvent>
 }
@@ -86,4 +85,53 @@ export class EventsQueue {
 		this.#storage.set(null)
 		this.#queue = []
 	}
+}
+
+/**
+ * Concatenation of an event name and a dedupe key.
+ */
+type EventDedupeId = `${string}:${string}`
+
+/**
+ * Produces an array of events that removes duplicates based on the `eventName` and `dedupeKey` fields.
+ * The last occurring duplicate is kept.
+ *
+ * @param events Collection of events to dedupe
+ * @returns Deduped collection of events
+ */
+export function dedupeEvents(events: Array<MetricsEvent>): Array<MetricsEvent> {
+	const idToEventMap = new Map<EventDedupeId, MetricsEvent>()
+
+	// List of events or an event dedupe ID "marker" that's later replaced with the appropriate event.
+	const result: Array<MetricsEvent | EventDedupeId> = []
+
+	for (const e of events) {
+		if (!e.dedupeKey) {
+			result.push(e)
+			continue
+		}
+
+		const id = `${e.eventName}:${e.dedupeKey}` as const
+
+		// If the event name + dedupe key combo has been encountered before,
+		// we move the existing marker to the end of the result.
+		if (idToEventMap.has(id)) {
+			const index = result.findLastIndex((v) => v === id)
+
+			if (index < 0) {
+				throw new Error(`Unreachable state. Expected to find key ${id}`)
+			}
+
+			result.splice(index, 1)
+		}
+
+		idToEventMap.set(id, e)
+
+		result.push(id)
+	}
+
+	return result.map((v) => {
+		// Replace any markers with the actual events of interest
+		return typeof v === 'string' ? idToEventMap.get(v)! : v
+	})
 }

@@ -1,4 +1,7 @@
+import { backOff } from 'exponential-backoff'
+
 import {
+	dedupeEvents,
 	EventsQueue,
 	type MetricsEvent,
 	type ProjectStatsEvent,
@@ -66,7 +69,7 @@ export class ComapeoMetricsClient {
 	// TODO: Support custom metrics events
 	addEvent(event: SessionStartEvent | SessionEndEvent | ProjectStatsEvent) {
 		if (event.eventName === 'session_start') {
-			// 1. Determine if a session end event needs to be added first based on the heartbeat.
+			// Determine if a session end event needs to be added first based on the heartbeat.
 			const lastHeartbeat = this.#storage.getHeartbeat()
 
 			const now = Date.now()
@@ -89,7 +92,7 @@ export class ComapeoMetricsClient {
 				}
 			}
 
-			// 2. Potentially remove the most recently queued session end event.
+			// Potentially remove the most recently queued session end event.
 			// If there is already a session end event that was added recently enough,
 			// we treat this call as a continuation of the session that the end event refers to by
 			// removing the queued session end event, updating the active session ID, and not adding the session start event.
@@ -116,7 +119,6 @@ export class ComapeoMetricsClient {
 				}
 			}
 
-			// 3. Add session start event
 			if (!this.#activeSessionId) {
 				this.#activeSessionId = generateSessionId()
 			}
@@ -129,7 +131,6 @@ export class ComapeoMetricsClient {
 				},
 			} satisfies QueuedSessionEvent)
 
-			// 4. Update internal state
 			this.#heartbeatIntervalId = setInterval(() => {
 				if (!this.#activeSessionId) {
 					return
@@ -141,19 +142,16 @@ export class ComapeoMetricsClient {
 				})
 			}, this.#heartbeatInterval)
 
-			// 4. Flush
 			this.#flushEvents()
 
 			return
 		}
 
-		if (event.eventName === 'session_end') {
-			// TODO: Throw error here?
-			if (!this.#activeSessionId) {
-				return
-			}
+		if (!this.#activeSessionId) {
+			return
+		}
 
-			// 1. Add event to queue
+		if (event.eventName === 'session_end') {
 			this.#eventsQueue.add({
 				...event,
 				properties: {
@@ -162,7 +160,6 @@ export class ComapeoMetricsClient {
 				},
 			} satisfies QueuedSessionEvent)
 
-			// 2. Update internal state
 			this.#activeSessionId = null
 
 			if (this.#heartbeatIntervalId) {
@@ -183,23 +180,31 @@ export class ComapeoMetricsClient {
 
 		await this.#flushingPromise
 
-		// TODO: Dedupe events based on dedupeKey
-		const eventsToSend = [...this.#eventsQueue.value]
+		const eventsToSend = dedupeEvents([...this.#eventsQueue.value])
 
 		this.#eventsQueue.clear()
 
 		try {
-			// TODO: Keep retrying until a certain point (maybe use exponential backoff?)
-			this.#flushingPromise = this.#fetch(this.#metricsEndpoint, {
-				method: 'POST',
-				body: JSON.stringify({ events: ndjson(eventsToSend) }),
-			})
+			this.#flushingPromise = backOff(
+				async () => {
+					const response = await this.#fetch(this.#metricsEndpoint, {
+						method: 'POST',
+						body: JSON.stringify({ events: ndjson(eventsToSend) }),
+					})
 
-			const response = await this.#flushingPromise
+					if (!response.ok) {
+						throw new Error(`Response status: ${response.status}`)
+					}
 
-			if (!response.ok) {
-				throw new Error(`Response status: ${response.status}`)
-			}
+					return response
+				},
+				{
+					// TODO: How many attempts?
+					numOfAttempts: 3,
+				},
+			)
+
+			await this.#flushingPromise
 		} catch (_error) {
 			// TODO: Do something with error?
 			this.#eventsQueue.add(...eventsToSend)
